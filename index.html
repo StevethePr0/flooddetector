@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Safe Route</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+  /* Layout: navy header, real street map (OpenFreeMap) beside a tabbed side panel (route / list / report). One column on phones. */
+  :root {
+    color-scheme: light;
+    --bg:#f2f5f9; --surface:#ffffff; --surface-2:#edf2f7; --ink:#13263b; --muted:#566779; --line:#dde5ee;
+    --accent:#1769aa; --accent-hover:#125a91; --on-accent:#ffffff;
+    --head:#10243a; --head-ink:#f3f7fb; --head-muted:#a9bbcc;
+    --ok:#0f7a4b; --ok-bg:#dff4e9; --warn:#8a5700; --warn-bg:#ffeec7; --bad:#b02525; --bad-bg:#fde5e5;
+    --ok-mark:#169b62; --warn-mark:#e3a118; --bad-mark:#d93a3a;
+    --ok-on:#ffffff; --warn-on:#2b1d00; --bad-on:#ffffff;
+    --font:'Be Vietnam Pro',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg:#0c1620; --surface:#132230; --surface-2:#1a2d3d; --ink:#e6eef6; --muted:#97a9bc; --line:#26394b;
+      --accent:#4aa3e8; --accent-hover:#6bb5ee; --on-accent:#08233a; --head:#0a1a2a;
+      --ok:#5fd69b; --ok-bg:#123a2a; --warn:#f0c053; --warn-bg:#3d3010; --bad:#ff8f8f; --bad-bg:#431b1b;
+      --ok-mark:#2fbf7f; --warn-mark:#e8b030; --bad-mark:#ef5a5a;
+      --ok-on:#04180e; --warn-on:#2b1d00; --bad-on:#240606;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg:#0c1620; --surface:#132230; --surface-2:#1a2d3d; --ink:#e6eef6; --muted:#97a9bc; --line:#26394b;
+    --accent:#4aa3e8; --accent-hover:#6bb5ee; --on-accent:#08233a; --head:#0a1a2a;
+    --ok:#5fd69b; --ok-bg:#123a2a; --warn:#f0c053; --warn-bg:#3d3010; --bad:#ff8f8f; --bad-bg:#431b1b;
+    --ok-mark:#2fbf7f; --warn-mark:#e8b030; --bad-mark:#ef5a5a;
+    --ok-on:#04180e; --warn-on:#2b1d00; --bad-on:#240606;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font); font-size: 14.5px; line-height: 1.5; }
+  button, select, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  h1, h2, h3, h4, p { margin: 0; }
+  h1, h2 { text-wrap: balance; }
+
+  .top { background: var(--head); color: var(--head-ink); }
+  .top-in { max-width: 1360px; margin: 0 auto; min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap;
+    padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .brand h2 { font-size: 19px; font-weight: 700; }
+  .brand small { display: block; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: var(--head-muted); }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px; border-radius: 999px; border: 1px solid #ffffff2e; background: #ffffff12; font-size: 12px; color: var(--head-ink); }
+  .pill i { width: 7px; height: 7px; border-radius: 50%; background: #f1b84a; display: inline-block; }
+  .pill.live i { background: #50d69a; }
+  .pill.err i { background: #ff7b7b; }
+
+  .wrap { max-width: 1360px; margin: 0 auto; padding-block: 22px 36px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .intro { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px 24px; flex-wrap: wrap; margin-bottom: 16px; }
+  .intro > div { min-width: 0; }
+  .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; }
+  h1 { font-size: clamp(22px, 3.4vw, 29px); font-weight: 700; letter-spacing: -.5px; line-height: 1.2; }
+  .lede { color: var(--muted); margin-top: 6px; max-width: 62ch; }
+  .updated { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+
+  .summary { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; font-size: 13px; }
+  .chip b { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  .dot.ok { background: var(--ok-mark); } .dot.warn { background: var(--warn-mark); } .dot.bad { background: var(--bad-mark); }
+  .notice { background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 9px 13px; font-size: 12.5px; color: var(--muted); margin-bottom: 16px; }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(330px, .95fr); gap: 16px; align-items: start; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; min-width: 0; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; flex-wrap: wrap; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+  .panel-head h3 { font-size: 15px; font-weight: 650; }
+  .panel-head p { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .tools { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 9px; padding: 8px 12px; font-size: 13px; font-weight: 600; line-height: 1.2; }
+  .btn:hover { background: var(--surface-2); }
+  .btn:disabled { opacity: .6; cursor: progress; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  .btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+  .btn.block { width: 100%; padding: 11px 14px; }
+  .btn.sm { padding: 6px 10px; font-size: 12px; }
+  .btn.danger-quiet { color: var(--bad); }
+
+  .map-wrap { position: relative; height: clamp(420px, 70vh, 700px); background: #e8eef3; }
+  #map { position: absolute; inset: 0; }
+  #map.picking .maplibregl-canvas { cursor: crosshair; }
+  .pickbar { position: absolute; top: 12px; left: 12px; right: 56px; z-index: 3; display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--accent); color: var(--on-accent); border-radius: 10px; padding: 8px 8px 8px 14px; font-size: 13px; font-weight: 600; box-shadow: 0 6px 18px #0a1a2a35; }
+  .pickbar[hidden], .map-msg[hidden], .map-card[hidden] { display: none; }
+  .pickbar .btn { background: #ffffff26; border-color: #ffffff40; color: inherit; }
+  .map-msg { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; padding: 24px; text-align: center; background: var(--surface-2); color: var(--ink); }
+  .map-msg p { max-width: 38ch; }
+  .map-msg .sub { color: var(--muted); font-size: 12.5px; margin-top: 6px; }
+
+  .map-card { position: absolute; left: 12px; bottom: 28px; z-index: 3; width: min(340px, calc(100% - 24px)); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; box-shadow: 0 8px 24px #0a1a2a30; font-size: 13px; }
+  .map-card h4 { margin: 0 24px 2px 0; font-size: 14px; font-weight: 650; }
+  .map-card .sub { color: var(--muted); font-size: 12px; }
+  .map-card .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .map-card .x { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border: 0; background: transparent; border-radius: 8px; font-size: 18px; line-height: 1; color: var(--muted); }
+  .map-card .x:hover { background: var(--surface-2); }
+  .map-card .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .big { font-family: var(--mono); font-size: 20px; font-weight: 500; font-variant-numeric: tabular-nums; }
+
+  /* map markers (DOM) */
+  .fm { position: relative; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 500 12px var(--mono); border: 2.5px solid #fff; box-shadow: 0 2px 7px #0a1a2a66; cursor: pointer; font-variant-numeric: tabular-nums; }
+  .fm.ok { background: var(--ok-mark); color: var(--ok-on); }
+  .fm.warn { background: var(--warn-mark); color: var(--warn-on); }
+  .fm.bad { background: var(--bad-mark); color: var(--bad-on); }
+  .fm.sel { outline: 3px solid #13263b; outline-offset: 2px; }
+  .fm.bad::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--bad-mark); opacity: .5; animation: pulse 2.2s ease-out infinite; pointer-events: none; }
+  @keyframes pulse { 0% { transform: scale(.85); opacity: .6; } 100% { transform: scale(1.7); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .fm.bad::after { animation: none; } }
+  .pin-a { width: 30px; height: 30px; border-radius: 50%; background: #1769aa; color: #fff; display: grid; place-items: center; font: 700 12px var(--font); border: 2.5px solid #fff; box-shadow: 0 2px 7px #0a1a2a66; }
+  .pin-home { width: 32px; height: 32px; border-radius: 10px; background: #13263b; display: grid; place-items: center; border: 2.5px solid #fff; box-shadow: 0 2px 7px #0a1a2a66; }
+  .school { display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; }
+  .school .tag { background: #13263b; color: #fff; font: 600 11.5px var(--font); padding: 4px 9px; border-radius: 7px; white-space: nowrap; box-shadow: 0 2px 7px #0a1a2a55; }
+  .school.start .tag { background: #1769aa; }
+  .school .pt { width: 14px; height: 14px; border-radius: 50%; background: #13263b; border: 3px solid #fff; box-shadow: 0 2px 6px #0a1a2a66; }
+  .school.start .pt { background: #1769aa; }
+
+  .map-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; flex-wrap: wrap; padding: 11px 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+  .legend { display: flex; gap: 8px 16px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .line { width: 18px; height: 0; border-top: 3px solid #1769aa; border-radius: 2px; }
+  .legend .line.dash { border-top: 3px dotted #7b8a9b; }
+
+  .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+  .b-ok { color: var(--ok); background: var(--ok-bg); } .b-warn { color: var(--warn); background: var(--warn-bg); } .b-bad { color: var(--bad); background: var(--bad-bg); }
+
+  .tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); }
+  .tab { border: 0; background: transparent; padding: 13px 6px; font-size: 13px; font-weight: 600; color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px; }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+  .pane { padding: 16px; }
+  .pane[hidden] { display: none; }
+  .field { margin-bottom: 14px; }
+  .field > label, .field > .lab { display: block; font-size: 12px; font-weight: 650; margin-bottom: 6px; }
+  .val { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-2); min-height: 40px; overflow-wrap: anywhere; }
+  .val.empty { color: var(--muted); }
+  .btnrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  select, input[type="number"], input[type="text"] { width: 100%; padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 10px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .chips .btn { font-family: var(--mono); font-weight: 500; }
+  .status { min-height: 20px; margin-top: 10px; font-size: 12.5px; }
+  .status.err { color: var(--bad); } .status.good { color: var(--ok); }
+
+  .result { margin-top: 16px; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: var(--surface-2); }
+  .result.ok { border-color: var(--ok-mark); } .result.warn { border-color: var(--warn-mark); } .result.bad { border-color: var(--bad-mark); }
+  .res-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; flex-wrap: wrap; }
+  .res-meta { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .res-text { margin-top: 8px; font-size: 13px; }
+  .steps { list-style: none; margin: 12px 0 0; padding: 0; counter-reset: s; }
+  .steps li { position: relative; padding: 8px 0 8px 30px; border-top: 1px solid var(--line); font-size: 13px; counter-increment: s; overflow-wrap: anywhere; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 9px; width: 20px; height: 20px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); font-family: var(--mono); font-size: 11px; display: grid; place-items: center; }
+  .steps .road { font-weight: 650; }
+  .steps .seg { color: var(--muted); font-size: 12px; margin-left: 6px; }
+  .passes { margin-top: 10px; font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
+  .passes span.badge { margin-right: 6px; }
+  .compare { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 12.5px; color: var(--muted); }
+
+  .flood-list { display: flex; flex-direction: column; margin: -6px 0 0; }
+  .fl { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; text-align: left; width: 100%; border: 0; background: transparent; padding: 11px 6px; border-bottom: 1px solid var(--line); border-radius: 8px; }
+  .fl:last-child { border-bottom: 0; }
+  .fl:hover, .fl.sel { background: var(--surface-2); }
+  .fl .mk { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .mk.ok { background: var(--ok-mark); color: var(--ok-on); } .mk.warn { background: var(--warn-mark); color: var(--warn-on); } .mk.bad { background: var(--bad-mark); color: var(--bad-on); }
+  .fl b { display: block; font-size: 13.5px; font-weight: 650; overflow-wrap: anywhere; }
+  .fl small { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  .list-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .empty { color: var(--muted); padding: 18px 4px; font-size: 13px; }
+  .footer { text-align: center; color: var(--muted); font-size: 12px; padding-top: 22px; }
+
+  @media (max-width: 960px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 520px) { .map-wrap { height: 440px; } .map-card { left: 8px; bottom: 26px; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" width="36" height="36" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#1c7bc2"/><path d="M16 5.5c3.6 4.7 6.2 7.8 6.2 11.3a6.2 6.2 0 0 1-12.4 0c0-3.5 2.6-6.6 6.2-11.3z" fill="#fff"/><path d="M8 26c2.6-2.2 4.4.8 6.6-.8s3.8-2 6.6 0 3-.2 3.8-.6" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+      <div><h2>Safe Route</h2><small>Cảnh báo ngập · TP. Hồ Chí Minh</small></div>
+    </div>
+    <div class="pills"><span class="pill" id="srcPill"><i></i><span id="srcText">Dữ liệu mẫu</span></span><span class="pill"><i></i>Bản demo</span></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="intro">
+    <div>
+      <div class="eyebrow">Bắt đầu từ trường Đinh Thiện Lý</div>
+      <h1>Bản đồ điểm ngập và đường về nhà an toàn</h1>
+      <p class="lede">Xem điểm ngập trên bản đồ đường phố thật, báo cáo điểm ngập mới và tìm đường về nhà tránh những đoạn ngập.</p>
+    </div>
+    <div class="updated">Cập nhật lúc <span id="updatedAt">--:--</span></div>
+  </div>
+
+  <div class="summary" id="summary" aria-live="polite"></div>
+  <p class="notice" id="notice">Các điểm ngập mặc định là dữ liệu mẫu (vị trí xấp xỉ), chưa phải số đo thật. Bản đồ: OpenFreeMap + MapLibre GL JS. Định tuyến dùng máy chủ demo OSRM công cộng, chỉ phù hợp để thử nghiệm.</p>
+
+  <div class="layout">
+    <section class="panel" aria-label="Bản đồ">
+      <div class="panel-head">
+        <div><h3>Bản đồ ngập</h3><p>Chạm vào một điểm ngập để xem chi tiết. Kéo và chụm để di chuyển, phóng to.</p></div>
+        <div class="tools">
+          <button class="btn" id="toSchool" type="button">Về trường</button>
+          <button class="btn" id="fitBtn" type="button">Xem tất cả điểm ngập</button>
+        </div>
+      </div>
+      <div class="map-wrap">
+        <div id="map"></div>
+        <div class="pickbar" id="pickbar" hidden><span id="pickText"></span><button class="btn sm" id="pickCancel" type="button">Hủy</button></div>
+        <div class="map-msg" id="mapMsg" hidden><div><p><b>Không tải được bản đồ.</b></p><p class="sub">Cần kết nối Internet để tải MapLibre và bản đồ OpenFreeMap. Kiểm tra mạng rồi tải lại trang.</p></div></div>
+        <div class="map-card" id="mapCard" hidden></div>
+      </div>
+      <div class="map-foot">
+        <div class="legend">
+          <span><i class="dot ok"></i>Bình thường (0–10 cm)</span>
+          <span><i class="dot warn"></i>Cần chú ý (11–30 cm)</span>
+          <span><i class="dot bad"></i>Nguy hiểm (trên 30 cm)</span>
+          <span><i class="line"></i>Tuyến an toàn</span>
+          <span><i class="line dash"></i>Tuyến nhanh nhất</span>
+        </div>
+      </div>
+    </section>
+
+    <aside class="panel" aria-label="Công cụ">
+      <div class="tabs" role="tablist">
+        <button class="tab" role="tab" id="t-route" aria-controls="p-route" aria-selected="true" type="button">Về nhà an toàn</button>
+        <button class="tab" role="tab" id="t-list" aria-controls="p-list" aria-selected="false" type="button">Điểm ngập</button>
+        <button class="tab" role="tab" id="t-report" aria-controls="p-report" aria-selected="false" type="button">Báo cáo ngập</button>
+      </div>
+
+      <div class="pane" id="p-route" role="tabpanel" aria-labelledby="t-route">
+        <div class="field">
+          <span class="lab">Đang ở</span>
+          <div class="val" id="startVal"></div>
+          <div class="btnrow">
+            <button class="btn sm" id="startSchool" type="button">Trường</button>
+            <button class="btn sm" id="startGps" type="button">Vị trí của tôi</button>
+            <button class="btn sm" id="startPick" type="button">Chọn trên bản đồ</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="lab">Nhà</span>
+          <div class="val empty" id="homeVal"></div>
+          <div class="btnrow"><button class="btn sm" id="homePick" type="button">Chọn trên bản đồ</button><button class="btn sm" id="swapBtn" type="button">⇄ Đổi chiều</button></div>
+          <div class="hint" style="margin-top:10px">Hoặc chọn nhanh một nơi để thử:</div>
+          <div class="chips" id="quick"></div>
+        </div>
+        <button class="btn primary block" id="routeBtn" type="button">Tìm đường an toàn</button>
+        <div id="routeOut" aria-live="polite"></div>
+      </div>
+
+      <div class="pane" id="p-list" role="tabpanel" aria-labelledby="t-list" hidden>
+        <div class="flood-list" id="floodList"></div>
+        <div class="list-foot">
+          <span class="hint" style="margin:0">Xếp theo mực nước cao nhất.</span>
+          <button class="btn" id="resetBtn" type="button">Khôi phục dữ liệu mẫu</button>
+        </div>
+      </div>
+
+      <div class="pane" id="p-report" role="tabpanel" aria-labelledby="t-report" hidden>
+        <form id="reportForm" novalidate>
+          <div class="field">
+            <span class="lab">Vị trí ngập</span>
+            <div class="val empty" id="placeVal">Chưa chọn vị trí</div>
+            <div class="btnrow"><button class="btn sm" id="placePick" type="button">Chọn trên bản đồ</button><button class="btn sm" id="placeGps" type="button">Dùng vị trí của tôi</button></div>
+          </div>
+          <div class="field">
+            <label for="levelIn">Mực nước (cm)</label>
+            <input type="number" id="levelIn" min="0" max="100" inputmode="numeric" placeholder="Ví dụ 20">
+            <div class="chips" id="levelChips">
+              <button class="btn sm" type="button" data-v="5">5</button><button class="btn sm" type="button" data-v="15">15</button><button class="btn sm" type="button" data-v="30">30</button><button class="btn sm" type="button" data-v="45">45</button>
+            </div>
+          </div>
+          <div class="field"><label for="nameIn">Tên đường (không bắt buộc)</label><input type="text" id="nameIn" maxlength="60" placeholder="Tự điền theo vị trí đã chọn"></div>
+          <div class="field"><label for="noteIn">Ghi chú (không bắt buộc)</label><input type="text" id="noteIn" maxlength="80" placeholder="Ví dụ: xe máy khó qua"></div>
+          <button class="btn primary block" type="submit">Gửi báo cáo</button>
+          <div class="status" id="reportStatus" aria-live="polite"></div>
+        </form>
+      </div>
+    </aside>
+  </div>
+  <div class="footer">Safe Route · Bản đồ © OpenStreetMap contributors, OpenFreeMap · Bản demo, chưa kết nối Arduino.</div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script>
+/* =====================================================================
+   CẤU HÌNH
+   ---------------------------------------------------------------------
+   1) Vị trí trường: tọa độ bên dưới là xấp xỉ cho "80 Nguyễn Đức Cảnh,
+      Tân Phong, Quận 7". Nếu lệch, bấm vào ghim trường trên bản đồ,
+      chọn "Đặt lại vị trí trường" rồi chạm đúng chỗ (lưu trong trình duyệt),
+      hoặc sửa số ở SCHOOL_DEFAULT.
+   2) Firebase (không bắt buộc): tạo project tại console.firebase.google.com,
+      bật Firestore Database, thêm Web app, rồi dán firebaseConfig vào
+      FIREBASE_CONFIG. Dữ liệu nằm ở collection "floods" với các trường:
+      name, level (số, cm), lat, lng, note, createdAt (timestamp).
+      Để thử nghiệm, rules cần cho phép đọc/ghi collection này; khi dùng thật
+      phải siết rules lại (ví dụ yêu cầu đăng nhập), vì ai cũng ghi được
+      sẽ có thể bị báo ngập giả.
+   ===================================================================== */
+var SCHOOL_DEFAULT = { name: 'Trường THCS và THPT Đinh Thiện Lý', addr: '80 Nguyễn Đức Cảnh, Tân Phong, Quận 7', lng: 106.7075, lat: 10.7262 };
+var FIREBASE_CONFIG = null; /* ví dụ: { apiKey: "...", authDomain: "...", projectId: "...", appId: "..." } */
+var MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+var OSRM = 'https://router.project-osrm.org';
+var FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/10.14.1/';
+var HIT_RADIUS_M = 80; /* điểm ngập trong phạm vi này quanh tuyến đường được tính là đi qua */
+
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var LABELS = { ok: 'Bình thường', warn: 'Cần chú ý', bad: 'Nguy hiểm' };
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function statusOf(l) { return l <= 10 ? 'ok' : l <= 30 ? 'warn' : 'bad'; }
+  function fmtKm(m) { return (m / 1000).toFixed(1).replace('.', ','); }
+  function ago(ts) {
+    var m = Math.max(0, Math.round((Date.now() - ts) / 60000));
+    if (m < 1) return 'vừa xong';
+    if (m < 60) return m + ' phút trước';
+    var h = Math.round(m / 60);
+    return h < 24 ? h + ' giờ trước' : Math.round(h / 24) + ' ngày trước';
+  }
+  function validPt(p) { return p && isFinite(p.lng) && isFinite(p.lat) && Math.abs(p.lat) <= 90 && Math.abs(p.lng) <= 180; }
+
+  /* ---------- lưu cục bộ ---------- */
+  var KEY = 'saferoute.maplibre.v1';
+  var store = { user: [], removed: [], home: null, school: null };
+  try {
+    var raw = localStorage.getItem(KEY);
+    if (raw) {
+      var o = JSON.parse(raw);
+      if (o && typeof o === 'object') {
+        store.user = Array.isArray(o.user) ? o.user.filter(validPt) : [];
+        store.removed = Array.isArray(o.removed) ? o.removed : [];
+        store.home = validPt(o.home) ? o.home : null;
+        store.school = validPt(o.school) ? o.school : null;
+      }
+    }
+  } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {} }
+
+  var school = { name: SCHOOL_DEFAULT.name, addr: SCHOOL_DEFAULT.addr, lng: (store.school || SCHOOL_DEFAULT).lng, lat: (store.school || SCHOOL_DEFAULT).lat };
+  var start = { kind: 'school', name: school.name, lng: school.lng, lat: school.lat };
+  var home = store.home;
+
+  /* ---------- dữ liệu ngập mẫu (vị trí xấp xỉ) ---------- */
+  var NOW = Date.now();
+  var SEED = [
+    { id: 's1', name: 'Nguyễn Văn Linh (gần Phú Mỹ Hưng)', lng: 106.7140, lat: 10.7300, level: 24, mins: 22, note: 'Ngập kèm triều cường.' },
+    { id: 's2', name: 'Huỳnh Tấn Phát (Quận 7)', lng: 106.7300, lat: 10.7330, level: 35, mins: 14, note: 'Nước dâng nhanh, xe máy nên tránh.' },
+    { id: 's3', name: 'Lê Văn Lương (Nhà Bè)', lng: 106.7010, lat: 10.7125, level: 41, mins: 30, note: 'Không nên đi qua.' },
+    { id: 's4', name: 'Nguyễn Hữu Thọ', lng: 106.7020, lat: 10.7190, level: 12, mins: 48, note: '' },
+    { id: 's5', name: 'Nguyễn Hữu Cảnh (Bình Thạnh)', lng: 106.7185, lat: 10.7945, level: 35, mins: 12, note: 'Nước dâng nhanh sau mưa lớn.' },
+    { id: 's6', name: 'Điện Biên Phủ (gần Thanh Đa)', lng: 106.7235, lat: 10.8030, level: 28, mins: 6, note: 'Một làn bị ngập.' },
+    { id: 's7', name: 'Phạm Văn Đồng (Gò Vấp)', lng: 106.6800, lat: 10.8330, level: 18, mins: 40, note: '' },
+    { id: 's8', name: 'Xa lộ Hà Nội (Thủ Đức)', lng: 106.7560, lat: 10.8450, level: 14, mins: 33, note: '' },
+    { id: 's9', name: 'Bến Bình Đông (Quận 8)', lng: 106.6640, lat: 10.7400, level: 41, mins: 18, note: '' },
+    { id: 's10', name: 'Lũy Bán Bích (Tân Phú)', lng: 106.6350, lat: 10.7780, level: 6, mins: 55, note: '' }
+  ].map(function (s) { s.ts = NOW - s.mins * 60000; s.user = false; return s; });
+
+  var QUICK = [
+    { name: 'Chợ Bến Thành', lng: 106.6980, lat: 10.7725 },
+    { name: 'Hàng Xanh', lng: 106.7110, lat: 10.8010 },
+    { name: 'Thủ Đức', lng: 106.7580, lat: 10.8500 },
+    { name: 'Gò Vấp', lng: 106.6650, lat: 10.8380 }
+  ];
+
+  var remote = null;       // mảng điểm ngập từ Firebase, null nếu chưa dùng
+  var floods = [];
+  function buildFloods() {
+    if (remote) { floods = remote.slice(); return; }
+    floods = store.user.concat(SEED.filter(function (s) { return store.removed.indexOf(s.id) < 0; }));
+  }
+
+  /* ---------- hình học ---------- */
+  function distToLine(p, coords) {
+    var kx = 111320 * Math.cos(p.lat * Math.PI / 180), ky = 110540, best = Infinity;
+    for (var i = 0; i < coords.length - 1; i++) {
+      var ax = (coords[i][0] - p.lng) * kx, ay = (coords[i][1] - p.lat) * ky;
+      var bx = (coords[i + 1][0] - p.lng) * kx, by = (coords[i + 1][1] - p.lat) * ky;
+      var dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+      var t = L ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / L)) : 0;
+      var d = Math.hypot(ax + t * dx, ay + t * dy);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+  function evalRoute(c) {
+    var danger = [], warn = [];
+    floods.forEach(function (f) {
+      if (f.level <= 10) return;
+      if (distToLine(f, c.coords) <= HIT_RADIUS_M) (f.level > 30 ? danger : warn).push(f);
+    });
+    return { c: c, danger: danger, warn: warn, dur: c.dur, dist: c.dist };
+  }
+  function cost(e) { return e.dur + e.warn.reduce(function (s, h) { return s + 120 + 8 * h.level; }, 0); }
+  function choose(cands) {
+    var ev = cands.map(evalRoute);
+    var fast = ev.filter(function (e) { return !e.c.via; })[0] || ev[0];
+    var safeList = ev.filter(function (e) { return e.danger.length === 0; }).sort(function (a, b) { return cost(a) - cost(b); });
+    var worst = safeList.length ? null : ev.slice().sort(function (a, b) { return a.danger.length - b.danger.length || a.dur - b.dur; })[0];
+    return { fast: fast, safe: safeList[0] || null, worst: worst };
+  }
+
+  /* ---------- định tuyến (OSRM demo) ---------- */
+  function osrmRoute(pts, alt) {
+    var url = OSRM + '/route/v1/driving/' + pts.map(function (p) { return p[0].toFixed(6) + ',' + p[1].toFixed(6); }).join(';')
+      + '?overview=full&geometries=geojson&steps=true&alternatives=' + (alt ? '3' : 'false');
+    return fetch(url).then(function (r) { if (!r.ok) throw new Error('osrm ' + r.status); return r.json(); }).then(function (j) {
+      if (j.code !== 'Ok') throw new Error(j.code);
+      return j.routes.map(function (r) { return { coords: r.geometry.coordinates, dist: r.distance, dur: r.duration, steps: (r.legs || []).reduce(function (a, l) { return a.concat(l.steps || []); }, []), via: !alt }; });
+    });
+  }
+  function findRoutes(A, B) {
+    return osrmRoute([A, B], true).then(function (base) {
+      base.forEach(function (b) { b.via = false; });
+      var first = choose(base);
+      if (first.safe && first.safe.warn.length === 0) return base;
+      var kx = 111320 * Math.cos(A[1] * Math.PI / 180), ky = 110540;
+      var vx = (B[0] - A[0]) * kx, vy = (B[1] - A[1]) * ky, len = Math.hypot(vx, vy) || 1;
+      var px = -vy / len, py = vx / len, mid = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+      var fastest = base[0].dur, jobs = [];
+      [0.22, 0.45].forEach(function (f) {
+        var off = Math.min(Math.max(len * f, 700), 6000);
+        [-1, 1].forEach(function (s) {
+          var via = [mid[0] + s * px * off / kx, mid[1] + s * py * off / ky];
+          jobs.push(osrmRoute([A, via, B], false).then(function (r) { return r[0]; }).catch(function () { return null; }));
+        });
+      });
+      return Promise.all(jobs).then(function (extra) {
+        extra.forEach(function (r) { if (r && r.dur <= fastest * 2.5) base.push(r); });
+        return base;
+      });
+    });
+  }
+  function nearest(lng, lat) {
+    var ctl = new AbortController(), t = setTimeout(function () { ctl.abort(); }, 4000);
+    return fetch(OSRM + '/nearest/v1/driving/' + lng.toFixed(6) + ',' + lat.toFixed(6) + '?number=1', { signal: ctl.signal })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { clearTimeout(t); var w = j && j.waypoints && j.waypoints[0]; return w ? { lng: w.location[0], lat: w.location[1], name: w.name || '' } : null; })
+      .catch(function () { clearTimeout(t); return null; });
+  }
+
+  /* ---------- bản đồ ---------- */
+  var map = null, mapReady = false, pendingRoute = undefined;
+  var floodMarkers = [], pinMarkers = [];
+  function showMapMsg() { $('#mapMsg').hidden = false; }
+  if (window.maplibregl) {
+    try {
+      map = new maplibregl.Map({ container: 'map', style: MAP_STYLE, center: [school.lng, school.lat], zoom: 14, attributionControl: { compact: true } });
+      map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right');
+      map.on('load', function () {
+        mapReady = true;
+        map.addSource('r-fast', { type: 'geojson', data: emptyFC() });
+        map.addSource('r-safe', { type: 'geojson', data: emptyFC() });
+        map.addLayer({ id: 'r-fast-line', type: 'line', source: 'r-fast', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#7b8a9b', 'line-width': 4, 'line-dasharray': [1.2, 1.8] } });
+        map.addLayer({ id: 'r-safe-case', type: 'line', source: 'r-safe', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#ffffff', 'line-width': 10 } });
+        map.addLayer({ id: 'r-safe-line', type: 'line', source: 'r-safe', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#1769aa', 'line-width': 6 } });
+        if (pendingRoute !== undefined) drawRoute(pendingRoute);
+      });
+      map.on('error', function () { if (!mapReady) showMapMsg(); });
+      map.on('click', function (e) { if (pick) onPick(e.lngLat); else if (sel) clearSel(); });
+    } catch (e) { map = null; showMapMsg(); }
+  } else { showMapMsg(); }
+
+  function emptyFC() { return { type: 'FeatureCollection', features: [] }; }
+  function line(coords) { return { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: coords } }] }; }
+  function drawRoute(res) {
+    pendingRoute = res;
+    if (!map || !mapReady) return;
+    var fastData = emptyFC(), safeData = emptyFC();
+    if (res) {
+      if (res.fast && (!res.safe || res.fast.c !== res.safe.c)) fastData = line(res.fast.c.coords);
+      if (res.safe) safeData = line(res.safe.c.coords);
+      else if (res.worst) fastData = line(res.worst.c.coords);
+    }
+    map.getSource('r-fast').setData(fastData);
+    map.getSource('r-safe').setData(safeData);
+  }
+  function fitCoords(coords, maxZoom) {
+    if (!map || !coords.length) return;
+    var b = new maplibregl.LngLatBounds(coords[0], coords[0]);
+    coords.forEach(function (c) { b.extend(c); });
+    var narrow = window.innerWidth < 600;
+    map.fitBounds(b, { padding: narrow ? 40 : 70, maxZoom: maxZoom || 16, duration: 600 });
+  }
+
+  function el(cls, html) { var d = document.createElement('div'); d.className = cls; if (html) d.innerHTML = html; return d; }
+  function renderMarkers() {
+    if (!map) return;
+    floodMarkers.forEach(function (m) { m.remove(); }); floodMarkers = [];
+    floods.forEach(function (f) {
+      var st = statusOf(f.level);
+      var d = el('fm ' + st + (sel && sel.kind === 'flood' && sel.id === f.id ? ' sel' : ''), String(f.level));
+      d.setAttribute('role', 'button'); d.setAttribute('tabindex', '0');
+      d.setAttribute('aria-label', f.name + ', ' + f.level + ' cm, ' + LABELS[st]);
+      d.addEventListener('click', function (ev) { ev.stopPropagation(); if (!pick) select('flood', f.id, false); });
+      d.addEventListener('keydown', function (ev) { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); select('flood', f.id, false); } });
+      floodMarkers.push(new maplibregl.Marker({ element: d }).setLngLat([f.lng, f.lat]).addTo(map));
+    });
+    pinMarkers.forEach(function (m) { m.remove(); }); pinMarkers = [];
+    var sc = el('school' + (start.kind === 'school' ? ' start' : ''), '<span class="tag">' + (start.kind === 'school' ? 'Xuất phát · ' : '') + 'Đinh Thiện Lý</span><span class="pt"></span>');
+    sc.addEventListener('click', function (ev) { ev.stopPropagation(); if (!pick) select('school', 'school', false); });
+    pinMarkers.push(new maplibregl.Marker({ element: sc, anchor: 'bottom' }).setLngLat([school.lng, school.lat]).addTo(map));
+    if (start.kind !== 'school') pinMarkers.push(new maplibregl.Marker({ element: el('pin-a', 'A') }).setLngLat([start.lng, start.lat]).addTo(map));
+    if (home) pinMarkers.push(new maplibregl.Marker({ element: el('pin-home', '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8 8 2l6.5 6M3.5 7v7h9V7" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/></svg>') }).setLngLat([home.lng, home.lat]).addTo(map));
+  }
+
+  /* ---------- hiển thị bên cạnh ---------- */
+  var sel = null;
+  function renderSummary() {
+    var c = { ok: 0, warn: 0, bad: 0 };
+    floods.forEach(function (f) { c[statusOf(f.level)]++; });
+    $('#summary').innerHTML =
+      '<span class="chip"><span class="dot"></span><b>' + floods.length + '</b> điểm theo dõi</span>' +
+      '<span class="chip"><span class="dot ok"></span><b>' + c.ok + '</b> bình thường</span>' +
+      '<span class="chip"><span class="dot warn"></span><b>' + c.warn + '</b> cần chú ý</span>' +
+      '<span class="chip"><span class="dot bad"></span><b>' + c.bad + '</b> nguy hiểm</span>';
+  }
+  function renderList() {
+    var box = $('#floodList');
+    if (!floods.length) { box.innerHTML = '<p class="empty">Chưa có điểm ngập nào. Hãy gửi báo cáo ở tab “Báo cáo ngập”.</p>'; return; }
+    box.innerHTML = floods.slice().sort(function (a, b) { return b.level - a.level; }).map(function (f) {
+      var st = statusOf(f.level);
+      return '<button class="fl' + (sel && sel.kind === 'flood' && sel.id === f.id ? ' sel' : '') + '" type="button" data-fid="' + esc(f.id) + '">'
+        + '<span class="mk ' + st + '">' + f.level + '</span>'
+        + '<span><b>' + esc(f.name) + '</b><small>' + ago(f.ts) + (f.user ? ' · báo cáo' : ' · mẫu') + '</small></span>'
+        + '<span class="badge b-' + st + '">' + LABELS[st] + '</span></button>';
+    }).join('');
+  }
+  function renderCard() {
+    var c = $('#mapCard');
+    if (!sel) { c.hidden = true; return; }
+    if (sel.kind === 'flood') {
+      var f = floods.filter(function (x) { return x.id === sel.id; })[0];
+      if (!f) { sel = null; c.hidden = true; return; }
+      var st = statusOf(f.level);
+      c.innerHTML = '<button class="x" type="button" data-act="close" aria-label="Đóng">×</button>'
+        + '<h4>' + esc(f.name) + '</h4><div class="sub">' + ago(f.ts) + (f.user ? ' · báo cáo do người dùng gửi' : ' · dữ liệu mẫu') + '</div>'
+        + '<div class="row"><span class="big">' + f.level + ' cm</span><span class="badge b-' + st + '">' + LABELS[st] + '</span></div>'
+        + (f.note ? '<div class="sub" style="margin-top:6px">' + esc(f.note) + '</div>' : '')
+        + '<div class="acts"><button class="btn danger-quiet sm" type="button" data-act="remove">Đã hết ngập, xóa điểm</button></div>';
+    } else {
+      c.innerHTML = '<button class="x" type="button" data-act="close" aria-label="Đóng">×</button>'
+        + '<h4>' + esc(school.name) + '</h4><div class="sub">' + esc(school.addr) + '</div>'
+        + '<div class="acts"><button class="btn primary sm" type="button" data-act="startschool">Xuất phát từ trường</button><button class="btn sm" type="button" data-act="moveschool">Đặt lại vị trí trường</button></div>';
+    }
+    c.hidden = false;
+  }
+  function renderPlaces() {
+    $('#startVal').textContent = start.name;
+    var hv = $('#homeVal');
+    hv.textContent = home ? home.name : 'Chưa chọn nhà';
+    hv.classList.toggle('empty', !home);
+  }
+  function renderAll() {
+    renderSummary(); renderList(); renderCard(); renderPlaces(); renderMarkers();
+    if (lastEnds) renderRouteOut();
+    $('#updatedAt').textContent = new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  /* ---------- chọn điểm ---------- */
+  function select(kind, id, focus) {
+    sel = { kind: kind, id: id };
+    renderMarkers(); renderList(); renderCard();
+    if (focus && map) {
+      var p = kind === 'flood' ? floods.filter(function (f) { return f.id === id; })[0] : school;
+      if (p) map.easeTo({ center: [p.lng, p.lat], zoom: Math.max(map.getZoom(), 15), duration: 500 });
+    }
+  }
+  function clearSel() { sel = null; renderMarkers(); renderList(); renderCard(); }
+  $('#floodList').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-fid]'); if (!b) return;
+    select('flood', b.getAttribute('data-fid'), true);
+    $('.map-wrap').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
+  $('#mapCard').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]'); if (!b || !sel) return;
+    var act = b.getAttribute('data-act');
+    if (act === 'close') clearSel();
+    else if (act === 'startschool') { setStart({ kind: 'school', name: school.name, lng: school.lng, lat: school.lat }); sel = null; renderAll(); showTab('route'); }
+    else if (act === 'moveschool') { sel = null; renderCard(); beginPick('school'); }
+    else if (act === 'remove' && sel.kind === 'flood') removeFlood(sel.id);
+  });
+  function removeFlood(id) {
+    var f = floods.filter(function (x) { return x.id === id; })[0];
+    sel = null;
+    if (remote && fb) { fb.deleteDoc(fb.doc(fb.db, 'floods', id)).catch(function () {}); return; }
+    if (f && f.user) store.user = store.user.filter(function (x) { return x.id !== id; });
+    else if (store.removed.indexOf(id) < 0) store.removed.push(id);
+    save(); buildFloods(); renderAll();
+  }
+
+  var pick = null;
+  var PICK_TEXT = { home: 'Chạm vào bản đồ để chọn vị trí nhà', start: 'Chạm vào bản đồ để chọn điểm xuất phát', report: 'Chạm vào bản đồ để chọn vị trí ngập', school: 'Chạm vào bản đồ để đặt lại vị trí trường' };
+  var report = null; // {lng,lat,name}
+  function beginPick(mode) {
+    if (!map) return;
+    pick = mode; sel = null; renderCard();
+    $('#pickText').textContent = PICK_TEXT[mode]; $('#pickbar').hidden = false;
+    $('#map').classList.add('picking');
+    $('.map-wrap').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  function endPick() { pick = null; $('#pickbar').hidden = true; $('#map').classList.remove('picking'); }
+  $('#pickCancel').addEventListener('click', endPick);
+  function onPick(ll) {
+    var mode = pick; endPick();
+    var pt = { lng: ll.lng, lat: ll.lat };
+    if (mode === 'school') {
+      school.lng = pt.lng; school.lat = pt.lat; store.school = { lng: pt.lng, lat: pt.lat }; save();
+      if (start.kind === 'school') { start.lng = school.lng; start.lat = school.lat; }
+      renderAll(); return;
+    }
+    if (mode === 'report') {
+      setReport({ lng: pt.lng, lat: pt.lat, name: '' }); showTab('report');
+      nearest(pt.lng, pt.lat).then(function (n) { if (n && report && report.lng === pt.lng) setReport({ lng: n.lng, lat: n.lat, name: n.name }); });
+      return;
+    }
+    nearest(pt.lng, pt.lat).then(function (n) {
+      var p = n ? { lng: n.lng, lat: n.lat, name: n.name } : { lng: pt.lng, lat: pt.lat, name: '' };
+      var label = (mode === 'home' ? 'Nhà' : 'Điểm đã chọn') + (p.name ? ' · ' + p.name : '');
+      if (mode === 'home') { home = { lng: p.lng, lat: p.lat, name: label }; store.home = home; save(); }
+      else setStart({ kind: 'map', name: label, lng: p.lng, lat: p.lat });
+      renderAll(); showTab('route');
+    });
+  }
+  function setStart(s) { start = s; }
+  function setReport(r) {
+    report = r;
+    var v = $('#placeVal');
+    v.textContent = r.name ? r.name + ' (' + r.lat.toFixed(5) + ', ' + r.lng.toFixed(5) + ')' : r.lat.toFixed(5) + ', ' + r.lng.toFixed(5);
+    v.classList.remove('empty');
+    if (r.name && !$('#nameIn').value) $('#nameIn').value = r.name;
+  }
+
+  /* ---------- tuyến đường ---------- */
+  var lastEnds = null, lastCands = null, busy = 0;
+  function stepsOf(route) {
+    var groups = [];
+    route.steps.forEach(function (s) {
+      var n = (s.name || '').trim();
+      if (!n) { if (groups.length) groups[groups.length - 1].d += s.distance; return; }
+      var g = groups[groups.length - 1];
+      if (g && g.n === n) g.d += s.distance; else groups.push({ n: n, d: s.distance });
+    });
+    return groups.filter(function (g) { return g.d >= 150; }).slice(0, 10);
+  }
+  function renderRouteOut() {
+    var out = $('#routeOut');
+    if (!lastEnds || !lastCands) { out.innerHTML = ''; drawRoute(null); return; }
+    var ch = choose(lastCands), res = ch;
+    drawRoute(res);
+    var html, s = ch.safe;
+    if (!s) {
+      var w = ch.worst;
+      html = '<div class="result bad"><div class="res-head"><span class="badge b-bad">Chưa có tuyến an toàn</span><span class="res-meta">' + fmtKm(w.dist) + ' km · ~' + Math.max(1, Math.round(w.dur / 60)) + ' phút</span></div>'
+        + '<p class="res-text">Mọi tuyến tìm được đều đi qua điểm nguy hiểm (trên 30 cm). Nên chờ nước rút hoặc nhờ người hỗ trợ. Tuyến ít nguy hiểm nhất được vẽ nét đứt.</p>'
+        + '<div class="passes">' + w.danger.map(function (h) { return '<div><span class="badge b-bad">' + h.level + ' cm</span>' + esc(h.name) + '</div>'; }).join('') + '</div></div>';
+      out.innerHTML = html; return;
+    }
+    var cls = s.warn.length ? 'warn' : 'ok';
+    var steps = stepsOf(s.c).map(function (g) { return '<li><span class="road">' + esc(g.n) + '</span><span class="seg">' + fmtKm(g.d) + ' km</span></li>'; }).join('');
+    var cmp = '';
+    var f = ch.fast;
+    if (f.c === s.c) cmp = 'Đây cũng là tuyến nhanh nhất.';
+    else {
+      var fh = f.danger.concat(f.warn);
+      cmp = 'Tuyến nhanh nhất (nét đứt) dài ' + fmtKm(f.dist) + ' km, ~' + Math.max(1, Math.round(f.dur / 60)) + ' phút nhưng đi qua '
+        + (fh.length ? fh.map(function (h) { return esc(h.name) + ' (' + h.level + ' cm)'; }).join('; ') : 'đoạn ngập') + '. Tuyến an toàn ' + (s.dist >= f.dist ? 'dài hơn ' + fmtKm(s.dist - f.dist) : 'ngắn hơn ' + fmtKm(f.dist - s.dist)) + ' km.';
+    }
+    html = '<div class="result ' + cls + '"><div class="res-head"><span class="badge b-' + cls + '">' + (cls === 'ok' ? 'Tuyến an toàn, không ngập' : 'Có đoạn ngập nhẹ, đi chậm') + '</span>'
+      + '<span class="res-meta">' + fmtKm(s.dist) + ' km · ~' + Math.max(1, Math.round(s.dur / 60)) + ' phút</span></div>'
+      + '<p class="res-text">' + (cls === 'ok' ? 'Tuyến này tránh các điểm ngập đã báo (trong phạm vi ' + HIT_RADIUS_M + ' m).' : 'Không có đường hoàn toàn khô ráo. Tuyến này tránh mọi điểm nguy hiểm và chỉ qua đoạn ngập nhẹ.') + '</p>'
+      + (s.warn.length ? '<div class="passes">' + s.warn.map(function (h) { return '<div><span class="badge b-warn">' + h.level + ' cm</span>' + esc(h.name) + '</div>'; }).join('') + '</div>' : '')
+      + '<ol class="steps">' + steps + '</ol><p class="compare">' + cmp + ' Thời gian tính theo ô tô, chưa tính ảnh hưởng của ngập.</p></div>';
+    out.innerHTML = html;
+  }
+  function findSafe() {
+    var out = $('#routeOut');
+    if (!home) { out.innerHTML = '<div class="result warn"><p class="res-text" style="margin:0">Hãy chọn vị trí nhà trước: chạm “Chọn trên bản đồ” hoặc chọn nhanh một nơi bên trên.</p></div>'; return; }
+    if (Math.hypot(home.lng - start.lng, home.lat - start.lat) < 0.0004) { out.innerHTML = '<div class="result warn"><p class="res-text" style="margin:0">Điểm đang ở và nhà gần như trùng nhau.</p></div>'; return; }
+    var my = ++busy, btn = $('#routeBtn');
+    btn.disabled = true; btn.textContent = 'Đang tìm đường…';
+    out.innerHTML = '';
+    findRoutes([start.lng, start.lat], [home.lng, home.lat]).then(function (cands) {
+      if (my !== busy) return;
+      lastEnds = { a: start, b: home }; lastCands = cands;
+      renderRouteOut();
+      var ch = choose(cands), r = ch.safe || ch.worst;
+      if (r) fitCoords(r.c.coords, 16);
+    }).catch(function () {
+      if (my !== busy) return;
+      out.innerHTML = '<div class="result bad"><div class="res-head"><span class="badge b-bad">Không tìm được đường</span></div><p class="res-text">Không kết nối được dịch vụ định tuyến (máy chủ demo OSRM) hoặc không có đường nối hai điểm. Thử lại sau ít phút.</p></div>';
+    }).then(function () { if (my === busy) { btn.disabled = false; btn.textContent = 'Tìm đường an toàn'; } });
+  }
+  $('#routeBtn').addEventListener('click', findSafe);
+  function clearRoute() { busy++; lastEnds = null; lastCands = null; $('#routeOut').innerHTML = ''; drawRoute(null); var b = $('#routeBtn'); b.disabled = false; b.textContent = 'Tìm đường an toàn'; }
+
+  $('#startSchool').addEventListener('click', function () { setStart({ kind: 'school', name: school.name, lng: school.lng, lat: school.lat }); clearRoute(); renderAll(); });
+  $('#startPick').addEventListener('click', function () { beginPick('start'); });
+  $('#homePick').addEventListener('click', function () { beginPick('home'); });
+  $('#startGps').addEventListener('click', function () {
+    var out = $('#routeOut');
+    if (!navigator.geolocation) { out.innerHTML = '<div class="result warn"><p class="res-text" style="margin:0">Trình duyệt này không hỗ trợ định vị.</p></div>'; return; }
+    navigator.geolocation.getCurrentPosition(function (p) {
+      setStart({ kind: 'gps', name: 'Vị trí của tôi', lng: p.coords.longitude, lat: p.coords.latitude });
+      clearRoute(); renderAll();
+      if (map) map.easeTo({ center: [start.lng, start.lat], zoom: 15, duration: 500 });
+    }, function () { out.innerHTML = '<div class="result warn"><p class="res-text" style="margin:0">Không lấy được vị trí. Hãy cho phép định vị cho trang này hoặc chọn trên bản đồ.</p></div>'; }, { enableHighAccuracy: true, timeout: 10000 });
+  });
+  $('#swapBtn').addEventListener('click', function () {
+    if (!home) return;
+    var s = start, h = home;
+    start = { kind: 'map', name: h.name.replace(/^Nhà/, 'Điểm đã chọn'), lng: h.lng, lat: h.lat };
+    home = { lng: s.lng, lat: s.lat, name: s.kind === 'school' ? s.name : s.name.replace(/^Điểm đã chọn/, 'Nhà') };
+    store.home = home; save(); clearRoute(); renderAll();
+  });
+  $('#quick').innerHTML = QUICK.map(function (q, i) { return '<button class="btn sm" type="button" data-q="' + i + '">' + esc(q.name) + '</button>'; }).join('');
+  $('#quick').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-q]'); if (!b) return;
+    var q = QUICK[Number(b.getAttribute('data-q'))];
+    home = { lng: q.lng, lat: q.lat, name: 'Nhà · ' + q.name }; store.home = home; save(); clearRoute(); renderAll();
+    nearest(q.lng, q.lat).then(function (n) { if (n && home && home.lng === q.lng) { home = { lng: n.lng, lat: n.lat, name: 'Nhà · ' + q.name }; store.home = home; save(); renderAll(); } });
+  });
+
+  /* ---------- báo cáo ngập ---------- */
+  $('#placePick').addEventListener('click', function () { beginPick('report'); });
+  $('#placeGps').addEventListener('click', function () {
+    var st = $('#reportStatus');
+    if (!navigator.geolocation) { st.className = 'status err'; st.textContent = 'Trình duyệt này không hỗ trợ định vị.'; return; }
+    navigator.geolocation.getCurrentPosition(function (p) {
+      var pt = { lng: p.coords.longitude, lat: p.coords.latitude };
+      setReport({ lng: pt.lng, lat: pt.lat, name: '' }); st.textContent = '';
+      nearest(pt.lng, pt.lat).then(function (n) { if (n && report && report.lng === pt.lng) setReport({ lng: pt.lng, lat: pt.lat, name: n.name }); });
+      if (map) map.easeTo({ center: [pt.lng, pt.lat], zoom: 16, duration: 500 });
+    }, function () { st.className = 'status err'; st.textContent = 'Không lấy được vị trí. Hãy cho phép định vị hoặc chọn trên bản đồ.'; }, { enableHighAccuracy: true, timeout: 10000 });
+  });
+  $('#levelChips').addEventListener('click', function (e) { var b = e.target.closest('[data-v]'); if (b) $('#levelIn').value = b.getAttribute('data-v'); });
+  $('#reportForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var st = $('#reportStatus'), v = $('#levelIn').value.trim(), lvl = Number(v);
+    if (!report) { st.className = 'status err'; st.textContent = 'Chọn vị trí ngập trên bản đồ trước.'; return; }
+    if (v === '' || !isFinite(lvl) || lvl < 0 || lvl > 100) { st.className = 'status err'; st.textContent = 'Nhập mực nước từ 0 đến 100 cm.'; $('#levelIn').focus(); return; }
+    lvl = Math.round(lvl);
+    var name = $('#nameIn').value.trim() || report.name || 'Điểm ngập do bạn báo', note = $('#noteIn').value.trim();
+    var f = { id: 'u' + Date.now(), name: name, level: lvl, lng: report.lng, lat: report.lat, note: note, ts: Date.now(), user: true };
+    function done() {
+      st.className = 'status good'; st.textContent = 'Đã thêm điểm ngập ' + lvl + ' cm (' + LABELS[statusOf(lvl)].toLowerCase() + ').';
+      $('#levelIn').value = ''; $('#noteIn').value = ''; $('#nameIn').value = '';
+      var at = { lng: f.lng, lat: f.lat }; report = null; var pv = $('#placeVal'); pv.textContent = 'Chưa chọn vị trí'; pv.classList.add('empty');
+      if (map) map.easeTo({ center: [at.lng, at.lat], zoom: Math.max(map.getZoom(), 15), duration: 500 });
+    }
+    if (remote && fb) {
+      fb.addDoc(fb.collection(fb.db, 'floods'), { name: name, level: lvl, lat: f.lat, lng: f.lng, note: note, createdAt: fb.serverTimestamp() })
+        .then(done).catch(function () { st.className = 'status err'; st.textContent = 'Không gửi được lên Firebase. Kiểm tra mạng và Firestore rules.'; });
+      return;
+    }
+    store.user.unshift(f); save(); buildFloods(); select('flood', f.id, false); renderAll(); done();
+  });
+  $('#resetBtn').addEventListener('click', function () {
+    if (remote) return;
+    store.user = []; store.removed = []; save(); buildFloods(); sel = null; renderAll();
+  });
+
+  /* ---------- nút trên bản đồ ---------- */
+  $('#toSchool').addEventListener('click', function () { if (map) map.easeTo({ center: [school.lng, school.lat], zoom: 14.5, duration: 600 }); });
+  $('#fitBtn').addEventListener('click', function () { fitCoords(floods.map(function (f) { return [f.lng, f.lat]; }).concat([[school.lng, school.lat]]), 14); });
+
+  /* ---------- tab ---------- */
+  var TABS = ['route', 'list', 'report'];
+  function showTab(name) { TABS.forEach(function (t) { var on = t === name; $('#t-' + t).setAttribute('aria-selected', on ? 'true' : 'false'); $('#p-' + t).hidden = !on; }); }
+  TABS.forEach(function (t) { $('#t-' + t).addEventListener('click', function () { showTab(t); }); });
+  $('.tabs').addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    var cur = TABS.findIndex(function (t) { return $('#t-' + t).getAttribute('aria-selected') === 'true'; });
+    var next = TABS[(cur + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length];
+    showTab(next); $('#t-' + next).focus();
+  });
+
+  /* ---------- Firebase (tùy chọn) ---------- */
+  var fb = null;
+  function setSrc(kind, text) { var p = $('#srcPill'); p.className = 'pill' + (kind ? ' ' + kind : ''); $('#srcText').textContent = text; }
+  function initFirebase() {
+    if (!FIREBASE_CONFIG) return;
+    setSrc('', 'Đang kết nối Firebase…');
+    Promise.all([import(FIREBASE_SDK + 'firebase-app.js'), import(FIREBASE_SDK + 'firebase-firestore.js')]).then(function (m) {
+      var app = m[0].initializeApp(FIREBASE_CONFIG), db = m[1].getFirestore(app);
+      fb = { db: db, collection: m[1].collection, addDoc: m[1].addDoc, deleteDoc: m[1].deleteDoc, doc: m[1].doc, serverTimestamp: m[1].serverTimestamp };
+      m[1].onSnapshot(m[1].collection(db, 'floods'), function (snap) {
+        remote = snap.docs.map(function (d) {
+          var x = d.data();
+          return { id: d.id, name: x.name || 'Điểm ngập', level: Number(x.level) || 0, lat: Number(x.lat), lng: Number(x.lng), note: x.note || '', ts: x.createdAt && x.createdAt.toMillis ? x.createdAt.toMillis() : Date.now(), user: true };
+        }).filter(validPt);
+        setSrc('live', 'Firebase · trực tuyến');
+        $('#notice').textContent = 'Đang hiển thị dữ liệu từ Firebase. Bản đồ: OpenFreeMap + MapLibre GL JS. Định tuyến dùng máy chủ demo OSRM công cộng, chỉ phù hợp để thử nghiệm.';
+        buildFloods(); renderAll();
+      }, function () { remote = null; fb = null; setSrc('err', 'Firebase lỗi · dùng dữ liệu mẫu'); buildFloods(); renderAll(); });
+    }).catch(function () { remote = null; fb = null; setSrc('err', 'Firebase lỗi · dùng dữ liệu mẫu'); });
+  }
+
+  /* ---------- khởi động ---------- */
+  buildFloods(); renderAll(); initFirebase();
+  window.__safeRoute = { choose: choose, evalRoute: evalRoute, distToLine: distToLine, setFloods: function (f) { floods = f; }, getFloods: function () { return floods; } };
+})();
+</script>
+</body>
+</html>
